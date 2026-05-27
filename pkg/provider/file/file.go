@@ -8,7 +8,6 @@ import (
 	"maps"
 	"os"
 	"os/signal"
-	"path"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -34,6 +33,7 @@ var _ provider.Provider = (*Provider)(nil)
 // Provider holds configurations of the provider.
 type Provider struct {
 	Directory                 string `description:"Load dynamic configuration from one or more .yml or .toml files in a directory." json:"directory,omitempty" toml:"directory,omitempty" yaml:"directory,omitempty" export:"true"`
+	Directories               []string `description:"Load dynamic configuration from one or more .yml or .toml files in a list of directories." json:"directories,omitempty" toml:"directories,omitempty" yaml:"directories,omitempty" export:"true"`
 	Watch                     bool   `description:"Watch provider." json:"watch,omitempty" toml:"watch,omitempty" yaml:"watch,omitempty" export:"true"`
 	Filename                  string `description:"Load dynamic configuration from a file." json:"filename,omitempty" toml:"filename,omitempty" yaml:"filename,omitempty" export:"true"`
 	DebugLogGeneratedTemplate bool   `description:"Enable debug logging of generated configuration template." json:"debugLogGeneratedTemplate,omitempty" toml:"debugLogGeneratedTemplate,omitempty" yaml:"debugLogGeneratedTemplate,omitempty" export:"true"`
@@ -59,20 +59,22 @@ func (p *Provider) Provide(configurationChan chan<- dynamic.Message, pool *safe.
 		var watchItems []string
 
 		switch {
-		case len(p.Directory) > 0:
-			watchItems = append(watchItems, p.Directory)
+		case len(p.getDirectories()) > 0:
+			for _, dir := range p.getDirectories() {
+				watchItems = append(watchItems, dir)
 
-			fileList, err := os.ReadDir(p.Directory)
-			if err != nil {
-				return fmt.Errorf("unable to read directory %s: %w", p.Directory, err)
-			}
-
-			for _, entry := range fileList {
-				if entry.IsDir() {
-					// ignore sub-dir
-					continue
+				fileList, err := os.ReadDir(dir)
+				if err != nil {
+					return fmt.Errorf("unable to read directory %s: %w", dir, err)
 				}
-				watchItems = append(watchItems, path.Join(p.Directory, entry.Name()))
+
+				for _, entry := range fileList {
+					if entry.IsDir() {
+						// ignore sub-dir
+						continue
+					}
+					watchItems = append(watchItems, filepath.Join(dir, entry.Name()))
+				}
 			}
 		case len(p.Filename) > 0:
 			watchItems = append(watchItems, filepath.Dir(p.Filename), p.Filename)
@@ -182,7 +184,7 @@ func (p *Provider) addWatcher(pool *safe.Pool, items []string, configurationChan
 			case <-ctx.Done():
 				return
 			case evt := <-watcher.Events:
-				if p.Directory == "" {
+				if len(p.getDirectories()) == 0 {
 					_, evtFileName := filepath.Split(evt.Name)
 					_, confFileName := filepath.Split(p.Filename)
 					if evtFileName == confFileName {
@@ -221,10 +223,14 @@ func (p *Provider) applyConfiguration(configurationChan chan<- dynamic.Message) 
 func (p *Provider) buildConfiguration() (*dynamic.Configuration, error) {
 	ctx := log.With().Str(logs.ProviderName, ProviderName).Logger().WithContext(context.Background())
 
-	if len(p.Directory) > 0 {
-		configurations, err := p.collectFileConfigs(ctx, p.Directory, "")
-		if err != nil {
-			return nil, fmt.Errorf("collecting file configs: %w", err)
+	if len(p.getDirectories()) > 0 {
+		var configurations []provider.NamedConfiguration
+		for _, directory := range p.getDirectories() {
+			subConfigurations, err := p.collectFileConfigs(ctx, directory, "")
+			if err != nil {
+				return nil, fmt.Errorf("collecting file configs from %s: %w", directory, err)
+			}
+			configurations = append(configurations, subConfigurations...)
 		}
 
 		return provider.Merge(ctx, configurations, provider.ResourceStrategySkipDuplicates), nil
@@ -235,6 +241,21 @@ func (p *Provider) buildConfiguration() (*dynamic.Configuration, error) {
 	}
 
 	return nil, errors.New("error using file configuration provider, neither filename nor directory is defined")
+}
+
+func (p *Provider) getDirectories() []string {
+	if len(p.Directories) > 0 {
+		if len(p.Directory) > 0 {
+			return append([]string{p.Directory}, p.Directories...)
+		}
+		return p.Directories
+	}
+
+	if len(p.Directory) > 0 {
+		return []string{p.Directory}
+	}
+
+	return nil
 }
 
 func (p *Provider) loadFileConfig(ctx context.Context, filename string, parseTemplate bool) (*dynamic.Configuration, error) {
