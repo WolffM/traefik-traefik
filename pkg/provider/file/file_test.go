@@ -197,6 +197,135 @@ func TestProvideWithWatch(t *testing.T) {
 	}
 }
 
+func TestProvideWithoutWatchMultipleDirectories(t *testing.T) {
+	tempDirA := t.TempDir()
+	tempDirB := t.TempDir()
+
+	err := os.WriteFile(filepath.Join(tempDirA, "a.toml"), []byte(`
+[http.routers]
+  [http.routers.routerA]
+    service = "serviceA"
+    rule = "Host(`+"`a.local`"+`)"
+
+[http.services]
+  [http.services.serviceA]
+    [http.services.serviceA.loadBalancer]
+      [[http.services.serviceA.loadBalancer.servers]]
+        url = "http://127.0.0.1"
+`), 0o600)
+	require.NoError(t, err)
+
+	err = os.WriteFile(filepath.Join(tempDirB, "b.toml"), []byte(`
+[http.routers]
+  [http.routers.routerB]
+    service = "serviceB"
+    rule = "Host(`+"`b.local`"+`)"
+
+[http.services]
+  [http.services.serviceB]
+    [http.services.serviceB.loadBalancer]
+      [[http.services.serviceB.loadBalancer.servers]]
+        url = "http://127.0.0.2"
+`), 0o600)
+	require.NoError(t, err)
+
+	provider := &Provider{
+		Watch:       false,
+		Directories: []string{tempDirA, tempDirB},
+	}
+	configChan := make(chan dynamic.Message)
+
+	go func() {
+		err := provider.Provide(configChan, safe.NewPool(t.Context()))
+		assert.NoError(t, err)
+	}()
+
+	timeout := time.After(time.Second)
+	select {
+	case conf := <-configChan:
+		require.NotNil(t, conf.Configuration.HTTP)
+		numServices := len(conf.Configuration.HTTP.Services) + len(conf.Configuration.TCP.Services) + len(conf.Configuration.UDP.Services)
+		numRouters := len(conf.Configuration.HTTP.Routers) + len(conf.Configuration.TCP.Routers) + len(conf.Configuration.UDP.Routers)
+		assert.Equal(t, 2, numServices)
+		assert.Equal(t, 2, numRouters)
+		require.NotNil(t, conf.Configuration.TLS)
+		assert.Len(t, conf.Configuration.TLS.Certificates, 0)
+	case <-timeout:
+		t.Errorf("timeout while waiting for config")
+	}
+}
+
+func TestProvideWithWatchMultipleDirectories(t *testing.T) {
+	tempDirA := t.TempDir()
+	tempDirB := t.TempDir()
+
+	provider := &Provider{
+		Watch:       true,
+		Directories: []string{tempDirA, tempDirB},
+	}
+	configChan := make(chan dynamic.Message)
+
+	go func() {
+		err := provider.Provide(configChan, safe.NewPool(t.Context()))
+		assert.NoError(t, err)
+	}()
+
+	timeout := time.After(time.Second)
+	select {
+	case conf := <-configChan:
+		require.NotNil(t, conf.Configuration.HTTP)
+		numServices := len(conf.Configuration.HTTP.Services) + len(conf.Configuration.TCP.Services) + len(conf.Configuration.UDP.Services)
+		numRouters := len(conf.Configuration.HTTP.Routers) + len(conf.Configuration.TCP.Routers) + len(conf.Configuration.UDP.Routers)
+		assert.Equal(t, 0, numServices)
+		assert.Equal(t, 0, numRouters)
+	case <-timeout:
+		t.Errorf("timeout while waiting for config")
+	}
+
+	err := os.WriteFile(filepath.Join(tempDirA, "a.toml"), []byte(`
+[http.routers]
+  [http.routers.routerA]
+    service = "serviceA"
+    rule = "Host(`+"`a.local`"+`)"
+
+[http.services]
+  [http.services.serviceA]
+    [http.services.serviceA.loadBalancer]
+      [[http.services.serviceA.loadBalancer.servers]]
+        url = "http://127.0.0.1"
+`), 0o600)
+	require.NoError(t, err)
+
+	err = os.WriteFile(filepath.Join(tempDirB, "b.toml"), []byte(`
+[http.routers]
+  [http.routers.routerB]
+    service = "serviceB"
+    rule = "Host(`+"`b.local`"+`)"
+
+[http.services]
+  [http.services.serviceB]
+    [http.services.serviceB.loadBalancer]
+      [[http.services.serviceB.loadBalancer.servers]]
+        url = "http://127.0.0.2"
+`), 0o600)
+	require.NoError(t, err)
+
+	timeout = time.After(time.Second)
+	for {
+		select {
+		case conf := <-configChan:
+			numServices := len(conf.Configuration.HTTP.Services) + len(conf.Configuration.TCP.Services) + len(conf.Configuration.UDP.Services)
+			numRouters := len(conf.Configuration.HTTP.Routers) + len(conf.Configuration.TCP.Routers) + len(conf.Configuration.UDP.Routers)
+			numTLSConfs := len(conf.Configuration.TLS.Certificates)
+			if numServices == 2 && numRouters == 2 && numTLSConfs == 0 {
+				return
+			}
+		case <-timeout:
+			t.Fatal("timeout while waiting for config")
+		}
+	}
+}
+
 func getTestCases() []ProvideTestCase {
 	return []ProvideTestCase{
 		{
