@@ -320,6 +320,7 @@ THIS FILE MUST NOT BE EDITED BY HAND
 | <a id="opt-providers-etcd-tls-key" href="#opt-providers-etcd-tls-key" title="#opt-providers-etcd-tls-key">providers.etcd.tls.key</a> | TLS key | |
 | <a id="opt-providers-etcd-username" href="#opt-providers-etcd-username" title="#opt-providers-etcd-username">providers.etcd.username</a> | Username for authentication. | |
 | <a id="opt-providers-file-debugloggeneratedtemplate" href="#opt-providers-file-debugloggeneratedtemplate" title="#opt-providers-file-debugloggeneratedtemplate">providers.file.debugloggeneratedtemplate</a> | Enable debug logging of generated configuration template. | false |
+| <a id="opt-providers-file-directories" href="#opt-providers-file-directories" title="#opt-providers-file-directories">providers.file.directories</a> | Load dynamic configuration from one or more .yml or .toml files in a list of directories. | |
 | <a id="opt-providers-file-directory" href="#opt-providers-file-directory" title="#opt-providers-file-directory">providers.file.directory</a> | Load dynamic configuration from one or more .yml or .toml files in a directory. | |
 | <a id="opt-providers-file-filename" href="#opt-providers-file-filename" title="#opt-providers-file-filename">providers.file.filename</a> | Load dynamic configuration from a file. | |
 | <a id="opt-providers-file-watch" href="#opt-providers-file-watch" title="#opt-providers-file-watch">providers.file.watch</a> | Watch provider. | true |
