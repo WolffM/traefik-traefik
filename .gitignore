@@ -12,6 +12,7 @@
 /traefik.toml
 /traefik.yml
 *.log
+.env
 *.exe
 cover.out
 vendor/

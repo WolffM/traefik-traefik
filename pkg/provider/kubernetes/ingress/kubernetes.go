@@ -384,6 +384,12 @@ func (p *Provider) loadConfigurationFromIngresses(ctx context.Context, client Cl
 				routerKey := strings.TrimPrefix(provider.Normalize(ingress.Namespace+"-"+ingress.Name+"-"+rule.Host+pa.Path), "-")
 
 				routers[routerKey] = append(routers[routerKey], rt)
+
+				if rt.TLS == nil && ingressRuleHasTLSHost(rule.Host, ingress.Spec.TLS) {
+					rtHTTPS := rt.DeepCopy()
+					rtHTTPS.TLS = &dynamic.RouterTLSConfig{}
+					routers[routerKey+"-tls"] = append(routers[routerKey+"-tls"], rtHTTPS)
+				}
 			}
 		}
 
@@ -763,6 +769,22 @@ func buildHostRuleV2(host string) string {
 	}
 
 	return fmt.Sprintf("Host(%q)", host)
+}
+
+func ingressRuleHasTLSHost(host string, tls []netv1.IngressTLS) bool {
+	for _, ingressTLS := range tls {
+		if len(ingressTLS.Hosts) == 0 {
+			return true
+		}
+
+		for _, tlsHost := range ingressTLS.Hosts {
+			if tlsHost == host {
+				return true
+			}
+		}
+	}
+
+	return false
 }
 
 func getCertificates(ctx context.Context, ingress *netv1.Ingress, k8sClient Client, tlsConfigs map[string]*tls.CertAndStores) error {

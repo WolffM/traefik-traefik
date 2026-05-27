@@ -1215,6 +1215,71 @@ func TestLoadConfigurationFromIngresses(t *testing.T) {
 			},
 		},
 		{
+			desc: "Ingress with TLS section should create HTTP and HTTPS routers",
+			expected: &dynamic.Configuration{
+				HTTP: &dynamic.HTTPConfiguration{
+					Middlewares: map[string]*dynamic.Middleware{},
+					Routers: map[string]*dynamic.Router{
+						"testing-myingress-example-com-foo": {
+							Rule:    `Host("example.com") && PathPrefix("/foo")`,
+							Service: "testing-example-com-80",
+							Observability: &dynamic.RouterObservabilityConfig{
+								Metadata: &dynamic.ObservabilityMetadata{
+									Ingress: &dynamic.KubernetesIngressMetadata{
+										Namespace:   "testing",
+										IngressName: "myingress",
+										ServiceName: "example-com",
+										ServicePort: "80",
+									},
+								},
+							},
+						},
+						"testing-myingress-example-com-foo-tls": {
+							Rule:    `Host("example.com") && PathPrefix("/foo")`,
+							Service: "testing-example-com-80",
+							Observability: &dynamic.RouterObservabilityConfig{
+								Metadata: &dynamic.ObservabilityMetadata{
+									Ingress: &dynamic.KubernetesIngressMetadata{
+										Namespace:   "testing",
+										IngressName: "myingress",
+										ServiceName: "example-com",
+										ServicePort: "80",
+									},
+								},
+							},
+							TLS: &dynamic.RouterTLSConfig{},
+						},
+					},
+					Services: map[string]*dynamic.Service{
+						"testing-example-com-80": {
+							LoadBalancer: &dynamic.ServersLoadBalancer{
+								Strategy:       dynamic.BalancerStrategyWRR,
+								PassHostHeader: pointer(true),
+								ResponseForwarding: &dynamic.ResponseForwarding{
+									FlushInterval: ptypes.Duration(100 * time.Millisecond),
+								},
+								Servers: []dynamic.Server{
+									{
+										URL: "http://10.11.0.1:80",
+									},
+								},
+							},
+						},
+					},
+				},
+				TLS: &dynamic.TLSConfiguration{
+					Certificates: []*tls.CertAndStores{
+						{
+							Certificate: tls.Certificate{
+								CertFile: types.FileOrContent("-----BEGIN CERTIFICATE-----\n-----END CERTIFICATE-----"),
+								KeyFile:  types.FileOrContent("-----BEGIN PRIVATE KEY-----\n-----END PRIVATE KEY-----"),
+							},
+						},
+					},
+				},
+			},
+		},
+		{
 			desc: "Ingress with a basic rule on one path with https (port == 443)",
 			expected: &dynamic.Configuration{
 				HTTP: &dynamic.HTTPConfiguration{
